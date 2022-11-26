@@ -27,11 +27,10 @@ import (
 	"net"
 	"net/rpc"
 	"os"
-	"syscall"
 	"sync"
 	"sync/atomic"
+	"syscall"
 )
-
 
 // px.Status() return values, indicating
 // whether an agreement has been decided,
@@ -116,9 +115,9 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 
 		// create a thread to accept RPC connections
 		go func() {
-			for px.isdead() == false {
+			for !px.isdead() {
 				conn, err := px.l.Accept()
-				if err == nil && px.isdead() == false {
+				if err == nil && !px.isdead() {
 					if px.isunreliable() && (rand.Int63()%1000) < 100 {
 						// discard the request.
 						conn.Close()
@@ -139,7 +138,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 				} else if err == nil {
 					conn.Close()
 				}
-				if err != nil && px.isdead() == false {
+				if err != nil && !px.isdead() {
 					fmt.Printf("Paxos(%v) accept: %v\n", me, err.Error())
 				}
 			}

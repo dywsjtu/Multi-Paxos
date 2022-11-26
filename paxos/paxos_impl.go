@@ -145,7 +145,7 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 					break
 				}
 			}
-			if reject_count > len(px.peers)/2 || majority_count > len(px.peers)/2 {
+			if reject_count > len(px.peers)/2 || majority_count > len(px.peers)/2 || na_count_map[highest_na] > len(px.peers)/2 {
 				break
 			}
 		}
