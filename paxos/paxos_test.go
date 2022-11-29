@@ -20,13 +20,19 @@ func randstring(n int) string {
 	return s[0:n]
 }
 
+// func port(tag string, host int) string {
+// 	s := "/var/tmp/824-"
+// 	s += strconv.Itoa(os.Getuid()) + "/"
+// 	os.Mkdir(s, 0777)
+// 	s += "px-"
+// 	s += strconv.Itoa(os.Getpid()) + "-"
+// 	s += tag + "-"
+// 	s += strconv.Itoa(host)
+// 	return s
+// }
+
 func port(tag string, host int) string {
-	s := "/var/tmp/824-"
-	s += strconv.Itoa(os.Getuid()) + "/"
-	os.Mkdir(s, 0777)
-	s += "px-"
-	s += strconv.Itoa(os.Getpid()) + "-"
-	s += tag + "-"
+	s := "localhost:1000"
 	s += strconv.Itoa(host)
 	return s
 }
@@ -138,6 +144,7 @@ func TestBasic(t *testing.T) {
 	for i := 0; i < npaxos; i++ {
 		pxh[i] = port("basic", i)
 	}
+	fmt.Println("ports", pxh)
 	for i := 0; i < npaxos; i++ {
 		pxa[i] = Make(pxh, i, nil)
 	}
