@@ -83,22 +83,22 @@ func StartServer(servers []string, me int) *KVPaxos {
 	kv.InitImpl()
 
 	os.Remove(servers[me])
-	l, e := net.Listen("unix", servers[me])
+	l, e := net.Listen("tcp", servers[me])
 	if e != nil {
 		log.Fatal("listen error: ", e)
 	}
 	kv.l = l
 
 	go func() {
-		for kv.isdead() == false {
+		for !kv.isdead() {
 			conn, err := kv.l.Accept()
-			if err == nil && kv.isdead() == false {
+			if err == nil && !kv.isdead() {
 				if kv.isunreliable() && (rand.Int63()%1000) < 100 {
 					// discard the request.
 					conn.Close()
 				} else if kv.isunreliable() && (rand.Int63()%1000) < 200 {
 					// process the request but force discard of reply.
-					c1 := conn.(*net.UnixConn)
+					c1 := conn.(*net.TCPConn)
 					f, _ := c1.File()
 					err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)
 					if err != nil {
@@ -111,7 +111,7 @@ func StartServer(servers []string, me int) *KVPaxos {
 			} else if err == nil {
 				conn.Close()
 			}
-			if err != nil && kv.isdead() == false {
+			if err != nil && !kv.isdead() {
 				fmt.Printf("KVPaxos(%v) accept: %v\n", me, err.Error())
 				kv.kill()
 			}

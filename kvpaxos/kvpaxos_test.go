@@ -19,13 +19,19 @@ func check(t *testing.T, ck *Clerk, key string, value string) {
 	}
 }
 
+// func port(tag string, host int) string {
+// 	s := "/var/tmp/824-"
+// 	s += strconv.Itoa(os.Getuid()) + "/"
+// 	os.Mkdir(s, 0777)
+// 	s += "kv-"
+// 	s += strconv.Itoa(os.Getpid()) + "-"
+// 	s += tag + "-"
+// 	s += strconv.Itoa(host)
+// 	return s
+// }
+
 func port(tag string, host int) string {
-	s := "/var/tmp/824-"
-	s += strconv.Itoa(os.Getuid()) + "/"
-	os.Mkdir(s, 0777)
-	s += "kv-"
-	s += strconv.Itoa(os.Getpid()) + "-"
-	s += tag + "-"
+	s := "localhost:1000"
 	s += strconv.Itoa(host)
 	return s
 }
