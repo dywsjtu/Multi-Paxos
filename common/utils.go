@@ -5,7 +5,12 @@ import (
 	"fmt"
 	"math/big"
 	"net/rpc"
+	"time"
 )
+
+const PingInterval = time.Millisecond * 100
+
+const DeadPings = 5
 
 func Nrand() int64 {
 	max := big.NewInt(int64(1) << 62)
@@ -30,7 +35,7 @@ func Nrand() int64 {
 //
 func Call(srv string, rpcname string,
 	args interface{}, reply interface{}) bool {
-	c, errx := rpc.Dial("tcp", srv)
+	c, errx := rpc.Dial("unix", srv)
 	if errx != nil {
 		return false
 	}

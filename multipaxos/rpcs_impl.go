@@ -56,6 +56,54 @@ type DecidedReply struct {
 	LastestDone int
 }
 
+type ForwardLeaderArgs struct {
+	Seq int
+	V   interface{}
+}
+
+type ForwardLeaderStartReply struct {
+	Status string
+}
+
+type HeartBeatArgs struct {
+	Id    int
+	Done  []int
+	Slots map[int]*PaxosSlot
+}
+
+type HeartBeatReply struct {
+	Status string
+}
+
+func (px *Paxos) Tick(args *HeartBeatArgs, replys *HeartBeatReply) error {
+	px.mu.Lock()
+	defer px.mu.Unlock()
+
+	if px.impl.Leader != args.Id {
+		return errors.New("you are not my leader but send me heartbeat")
+	}
+
+	px.impl.Done = args.Done
+
+	for k, v := range args.Slots {
+		slot := px.addSlots(k)
+		slot.mu_.Lock()
+		if slot.Status != Decided && v.Status == Decided {
+			slot.Status = Decided
+			slot.Value = v.Value
+		}
+		slot.mu_.Unlock()
+	}
+
+	go px.Forget(args.Id, args.Done[args.Id])
+	return nil
+}
+
+func (px *Paxos) ForwardLeader(args *ForwardLeaderArgs, reply *ForwardLeaderStartReply) error {
+	px.Start(args.Seq, args.V)
+	return nil
+}
+
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	px.mu.Lock()
 	if args.Seq < px.impl.Lowest_slot {

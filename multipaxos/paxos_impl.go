@@ -15,6 +15,7 @@ type PaxosImpl struct {
 	Highest_slot int
 	Lowest_slot  int
 	Done         []int
+	Leader       int
 }
 
 type PaxosSlot struct {
@@ -33,11 +34,42 @@ type PaxosSlot struct {
 // your px.impl.* initializations here.
 //
 func (px *Paxos) initImpl() {
+	px.impl.Leader = 0
 	px.impl.Highest_slot = -1
 	px.impl.Lowest_slot = 0
 	px.impl.Slots = make(map[int]*PaxosSlot)
 	for i := 0; i < len(px.peers); i++ {
 		px.impl.Done = append(px.impl.Done, -1)
+	}
+	go func() {
+		for {
+			px.tick()
+			time.Sleep(common.PingInterval)
+		}
+	}()
+}
+
+func (px *Paxos) tick() {
+	px.mu.Lock()
+	defer px.mu.Unlock()
+
+	if px.impl.Leader == px.me {
+		for i, peer := range px.peers {
+			if i != px.me {
+				slots := make(map[int]*PaxosSlot)
+				for k, v := range px.impl.Slots {
+					if k > px.impl.Done[i] && v.Status == Decided {
+						decided_value := v.Value
+						slot := initSlot(int64(px.me))
+						slot.Value = decided_value
+						slots[k] = slot
+					}
+				}
+				args := &HeartBeatArgs{px.me, px.impl.Done, slots}
+				reply := &HeartBeatReply{}
+				common.Call(peer, "Paxos.Tick", args, reply)
+			}
+		}
 	}
 }
 
@@ -75,7 +107,13 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	}
 	slot := px.addSlots(seq)
 	if slot.Status != Decided {
-		go px.StartOnNewSlot(seq, v, slot)
+		if px.impl.Leader == px.me {
+			go px.StartOnNewSlot(seq, v, slot)
+		} else {
+			args := &ForwardLeaderArgs{seq, v}
+			reply := &ForwardLeaderStartReply{}
+			go common.Call(px.peers[px.impl.Leader], "Paxos.ForwardLeader", args, reply)
+		}
 	}
 }
 
