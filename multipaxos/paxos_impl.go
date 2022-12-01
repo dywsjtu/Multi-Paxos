@@ -135,64 +135,65 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 		}
 		majority_count := 0
 		reject_count := 0
-		highest_na := int64(-1)
+		// highest_na := int64(-1)
 		highest_va := v
-		na_count_map := make(map[int64](int))
+		// na_count_map := make(map[int64](int))
 		//prepera phase
 		isDecidedPrep := false
 		var decidedV interface{}
-		for i, peer := range px.peers {
-			px.mu.Lock()
-			args := &PrepareArgs{seq, slot.N, px.impl.Done[px.me], px.me}
-			px.mu.Unlock()
-			reply := &PrepareReply{}
-			ok := true
-			if i == px.me {
-				if px.Prepare(args, reply) != nil {
-					ok = false
-				}
-			} else {
-				ok = common.Call(peer, "Paxos.Prepare", args, reply)
-			}
-			if ok {
-				px.Forget(i, reply.LastestDone)
-				if reply.Status == OK {
-					majority_count += 1
-					if reply.Na > highest_na {
-						highest_na = reply.Na
-						highest_va = reply.Va
-						na_count_map[highest_na] += 1
-					}
-					// } else if reply.Na == highest_na && reply.Va == highest_va {
-					// 	na_count_map[highest_na] += 1
-					// }
-				} else {
-					reject_count += 1
-					if slot.Highest_N < reply.Highest_N {
-						slot.Highest_N = reply.Highest_N
-					}
-				}
-				if reply.LastestDone >= seq {
-					isDecidedPrep = true
-					decidedV = reply.V
-					break
-				}
-				if na_count_map[highest_na] > len(px.peers)/2 {
-					isDecidedPrep = true
-					decidedV = highest_va
-					break
-				}
-			}
-			if reject_count > len(px.peers)/2 || majority_count > len(px.peers)/2 || na_count_map[highest_na] > len(px.peers)/2 {
-				break
-			}
-		}
-		if majority_count <= len(px.peers)/2 && !isDecidedPrep {
-			slot.mu.Unlock()
-			time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
-			slot.mu.Lock()
-			continue
-		}
+		// for i, peer := range px.peers {
+		// 	px.mu.Lock()
+		// 	args := &PrepareArgs{seq, slot.N, px.impl.Done[px.me], px.me}
+		// 	px.mu.Unlock()
+		// 	reply := &PrepareReply{}
+		// 	ok := true
+		// 	if i == px.me {
+		// 		if px.Prepare(args, reply) != nil {
+		// 			ok = false
+		// 		}
+		// 	} else {
+		// 		ok = common.Call(peer, "Paxos.Prepare", args, reply)
+		// 	}
+		// 	if ok {
+		// 		px.Forget(i, reply.LastestDone)
+		// 		if reply.Status == OK {
+		// 			majority_count += 1
+		// 			if reply.Na > highest_na {
+		// 				highest_na = reply.Na
+		// 				highest_va = reply.Va
+		// 				na_count_map[highest_na] += 1
+		// 			}
+		// 			// } else if reply.Na == highest_na && reply.Va == highest_va {
+		// 			// 	na_count_map[highest_na] += 1
+		// 			// }
+		// 		} else {
+		// 			reject_count += 1
+		// 			if slot.Highest_N < reply.Highest_N {
+		// 				slot.Highest_N = reply.Highest_N
+		// 			}
+		// 		}
+		// 		if reply.LastestDone >= seq {
+		// 			isDecidedPrep = true
+		// 			decidedV = reply.V
+		// 			break
+		// 		}
+		// 		if na_count_map[highest_na] > len(px.peers)/2 {
+		// 			isDecidedPrep = true
+		// 			decidedV = highest_va
+		// 			break
+		// 		}
+		// 	}
+		// 	if reject_count > len(px.peers)/2 || majority_count > len(px.peers)/2 || na_count_map[highest_na] > len(px.peers)/2 {
+		// 		break
+		// 	}
+		// }
+		// if majority_count <= len(px.peers)/2 && !isDecidedPrep {
+		// 	slot.mu.Unlock()
+		// 	time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
+		// 	slot.mu.Lock()
+		// 	continue
+		// }
+
 		isDecidedAcc := false
 		if !isDecidedPrep {
 			// accept phase

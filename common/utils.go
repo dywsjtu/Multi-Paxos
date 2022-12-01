@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const PingInterval = time.Millisecond * 100
+const PingInterval = time.Millisecond * 1000
 
 const DeadPings = 5
 
