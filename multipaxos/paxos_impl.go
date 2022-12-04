@@ -1,6 +1,7 @@
 package paxos
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -15,7 +16,14 @@ type PaxosImpl struct {
 	Highest_slot int
 	Lowest_slot  int
 	Done         []int
-	Leader       int
+	View         int // view number
+	Miss_count   int
+	Leader_dead  bool
+}
+
+type Ballot struct {
+	Round int // round number
+	N     int // ballot number
 }
 
 type PaxosSlot struct {
@@ -34,9 +42,11 @@ type PaxosSlot struct {
 // your px.impl.* initializations here.
 //
 func (px *Paxos) initImpl() {
-	px.impl.Leader = 0
+	px.impl.View = 0
 	px.impl.Highest_slot = -1
 	px.impl.Lowest_slot = 0
+	px.impl.Miss_count = 0
+	px.impl.Leader_dead = false
 	px.impl.Slots = make(map[int]*PaxosSlot)
 	for i := 0; i < len(px.peers); i++ {
 		px.impl.Done = append(px.impl.Done, -1)
@@ -47,25 +57,108 @@ func (px *Paxos) initImpl() {
 			time.Sleep(common.PingInterval)
 		}
 	}()
+
+	go func() {
+		for {
+			px.check_heartbeart()
+			time.Sleep(common.PingInterval)
+		}
+	}()
+}
+
+func (px *Paxos) check_heartbeart() {
+	px.mu.Lock()
+	defer px.mu.Unlock()
+	px.impl.Miss_count++
+	if px.impl.Miss_count > 3 {
+		px.impl.View += 1
+		px.impl.Miss_count = 0
+		px.impl.Leader_dead = true
+		go px.prepare()
+	}
+}
+
+func (px *Paxos) prepare() {
+	for {
+		majority_count := 0
+		reject_count := 0
+		highest_view := int64(-1)
+
+		for i, peer := range px.peers {
+
+			px.mu.Lock()
+			args := &PrepareArgs{int64(px.impl.View), px.me}
+			px.mu.Unlock()
+			reply := &PrepareReply{}
+			ok := true
+			if i != px.me {
+				ok = common.Call(peer, "Paxos.Prepare", args, reply)
+			} else {
+				if px.Prepare(args, reply) != nil {
+					ok = false
+				}
+			}
+			if ok {
+				if reply.Status == Reject {
+					reject_count++
+					if reply.View > highest_view {
+						highest_view = reply.View
+					}
+				} else {
+					majority_count++
+				}
+			}
+
+			if reject_count > len(px.peers)/2 {
+				px.mu.Lock()
+				px.impl.View = int(highest_view)
+				px.impl.Leader_dead = false
+				px.mu.Unlock()
+				return
+			}
+
+			if majority_count > len(px.peers)/2 {
+				px.mu.Lock()
+				if highest_view <= int64(px.impl.View) {
+					px.impl.Leader_dead = false
+					px.mu.Unlock()
+					return
+				} else {
+					px.impl.View = int(highest_view)
+					px.impl.Leader_dead = false
+					px.mu.Unlock()
+					return
+				}
+			}
+			
+		}
+	}
 }
 
 func (px *Paxos) tick() {
 	px.mu.Lock()
-	defer px.mu.Unlock()
 
-	if px.impl.Leader == px.me {
+	if px.impl.View%len(px.peers) != px.me {
+		fmt.Printf("I am in Leader role but Leader is not me %d but %d", px.me, px.impl.View%len(px.peers))
+		px.mu.Unlock()
+		return
+	}
+	slots := make(map[int]*PaxosSlot)
+	for k, v := range px.impl.Slots {
+		if v.Status == Decided {
+			decided_value := v.Value
+			slot := initSlot(int64(px.me))
+			slot.Value = decided_value
+			slots[k] = slot
+		}
+	}
+	px.mu.Unlock()
+	if px.impl.View%len(px.peers) == px.me {
 		for i, peer := range px.peers {
 			if i != px.me {
-				slots := make(map[int]*PaxosSlot)
-				for k, v := range px.impl.Slots {
-					if k > px.impl.Done[i] && v.Status == Decided {
-						decided_value := v.Value
-						slot := initSlot(int64(px.me))
-						slot.Value = decided_value
-						slots[k] = slot
-					}
-				}
-				args := &HeartBeatArgs{px.me, px.impl.Done, slots}
+				px.mu.Lock()
+				args := &HeartBeatArgs{px.me, px.impl.View, px.impl.Done, slots}
+				px.mu.Unlock()
 				reply := &HeartBeatReply{}
 				common.Call(peer, "Paxos.Tick", args, reply)
 			}
@@ -107,12 +200,14 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	}
 	slot := px.addSlots(seq)
 	if slot.Status != Decided {
-		if px.impl.Leader == px.me {
-			go px.StartOnNewSlot(seq, v, slot)
+		if px.impl.View%len(px.peers) == px.me {
+			if !px.impl.Leader_dead {
+				go px.StartOnNewSlot(seq, v, slot)
+			}
 		} else {
 			args := &ForwardLeaderArgs{seq, v}
 			reply := &ForwardLeaderStartReply{}
-			go common.Call(px.peers[px.impl.Leader], "Paxos.ForwardLeader", args, reply)
+			go common.Call(px.peers[px.impl.View%len(px.peers)], "Paxos.ForwardLeader", args, reply)
 		}
 	}
 }
@@ -127,117 +222,60 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 		if slot.Status == Decided || px.isdead() {
 			break
 		}
-		for {
-			if slot.N > slot.Highest_N {
-				break
-			}
-			slot.N += int64(len(px.peers))
-		}
+		slot.N = int64(px.impl.View)
 		majority_count := 0
 		reject_count := 0
-		// highest_na := int64(-1)
+		highest_view := int64(-1)
 		highest_va := v
-		// na_count_map := make(map[int64](int))
-		//prepera phase
-		isDecidedPrep := false
 		var decidedV interface{}
-		// for i, peer := range px.peers {
-		// 	px.mu.Lock()
-		// 	args := &PrepareArgs{seq, slot.N, px.impl.Done[px.me], px.me}
-		// 	px.mu.Unlock()
-		// 	reply := &PrepareReply{}
-		// 	ok := true
-		// 	if i == px.me {
-		// 		if px.Prepare(args, reply) != nil {
-		// 			ok = false
-		// 		}
-		// 	} else {
-		// 		ok = common.Call(peer, "Paxos.Prepare", args, reply)
-		// 	}
-		// 	if ok {
-		// 		px.Forget(i, reply.LastestDone)
-		// 		if reply.Status == OK {
-		// 			majority_count += 1
-		// 			if reply.Na > highest_na {
-		// 				highest_na = reply.Na
-		// 				highest_va = reply.Va
-		// 				na_count_map[highest_na] += 1
-		// 			}
-		// 			// } else if reply.Na == highest_na && reply.Va == highest_va {
-		// 			// 	na_count_map[highest_na] += 1
-		// 			// }
-		// 		} else {
-		// 			reject_count += 1
-		// 			if slot.Highest_N < reply.Highest_N {
-		// 				slot.Highest_N = reply.Highest_N
-		// 			}
-		// 		}
-		// 		if reply.LastestDone >= seq {
-		// 			isDecidedPrep = true
-		// 			decidedV = reply.V
-		// 			break
-		// 		}
-		// 		if na_count_map[highest_na] > len(px.peers)/2 {
-		// 			isDecidedPrep = true
-		// 			decidedV = highest_va
-		// 			break
-		// 		}
-		// 	}
-		// 	if reject_count > len(px.peers)/2 || majority_count > len(px.peers)/2 || na_count_map[highest_na] > len(px.peers)/2 {
-		// 		break
-		// 	}
-		// }
-		// if majority_count <= len(px.peers)/2 && !isDecidedPrep {
-		// 	slot.mu.Unlock()
-		// 	time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
-		// 	slot.mu.Lock()
-		// 	continue
-		// }
-
 		isDecidedAcc := false
-		if !isDecidedPrep {
-			// accept phase
-			majority_count = 0
-			reject_count = 0
-			for i, peer := range px.peers {
-				px.mu.Lock()
-				args := &AcceptArgs{seq, slot.N, highest_va, px.me, px.impl.Done[px.me]}
-				px.mu.Unlock()
-				reply := &AcceptReply{}
-				ok := true
-				if i == px.me {
-					if px.Accept(args, reply) != nil {
-						ok = false
-					}
+		// accept phase
+		majority_count = 0
+		reject_count = 0
+		for i, peer := range px.peers {
+			px.mu.Lock()
+			args := &AcceptArgs{seq, slot.N, highest_va, px.me, px.impl.Done[px.me]}
+			px.mu.Unlock()
+			reply := &AcceptReply{}
+			ok := true
+			if i == px.me {
+				if px.Accept(args, reply) != nil {
+					ok = false
+				}
+			} else {
+				ok = common.Call(peer, "Paxos.Accept", args, reply)
+			}
+			if ok {
+				px.Forget(i, reply.LastestDone)
+				if reply.Status == OK {
+					majority_count += 1
 				} else {
-					ok = common.Call(peer, "Paxos.Accept", args, reply)
-				}
-				if ok {
-					px.Forget(i, reply.LastestDone)
-					if reply.Status == OK {
-						majority_count += 1
-					} else {
-						reject_count += 1
-					}
-					if reply.LastestDone >= seq {
-						isDecidedAcc = true
-						decidedV = reply.V
-						break
+					reject_count += 1
+					if int64(reply.View) > highest_view {
+						highest_view = int64(reply.View)
 					}
 				}
-				if reject_count > len(px.peers)/2 || majority_count > len(px.peers)/2 {
+				if reply.LastestDone >= seq {
+					isDecidedAcc = true
+					decidedV = reply.V
 					break
 				}
 			}
-			if majority_count <= len(px.peers)/2 && !isDecidedAcc {
-				slot.mu.Unlock()
-				time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
-				slot.mu.Lock()
-				continue
+			if reject_count > len(px.peers)/2 || majority_count > len(px.peers)/2 {
+				break
 			}
 		}
 
-		if isDecidedAcc || isDecidedPrep {
+		if 
+
+		if majority_count <= len(px.peers)/2 && !isDecidedAcc {
+			slot.mu.Unlock()
+			time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
+			slot.mu.Lock()
+			continue
+		}
+
+		if isDecidedAcc {
 			highest_va = decidedV
 		}
 		// learn phase

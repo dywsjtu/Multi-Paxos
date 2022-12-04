@@ -2,6 +2,7 @@ package paxos
 
 import (
 	"errors"
+	"fmt"
 )
 
 // In all data types that represent RPC arguments/reply, field names
@@ -16,24 +17,18 @@ const (
 type Response string
 
 type PrepareArgs struct {
-	Seq         int
-	N           int64
-	LastestDone int
-	Me          int
+	View int64 // view number
+	Id   int
 }
 
 type PrepareReply struct {
-	Status      string
-	Na          int64
-	Va          interface{}
-	Highest_N   int64
-	LastestDone int
-	V           interface{}
+	View   int64 // view number
+	Status string
 }
 
 type AcceptArgs struct {
 	Seq         int
-	N           int64
+	N           int64 // view number
 	V           interface{}
 	Me          int
 	LastestDone int
@@ -43,6 +38,7 @@ type AcceptReply struct {
 	Status      string
 	LastestDone int
 	V           interface{}
+	View        int64
 }
 
 type DecidedArgs struct {
@@ -67,6 +63,7 @@ type ForwardLeaderStartReply struct {
 
 type HeartBeatArgs struct {
 	Id    int
+	View  int
 	Done  []int
 	Slots map[int]*PaxosSlot
 }
@@ -79,11 +76,13 @@ func (px *Paxos) Tick(args *HeartBeatArgs, replys *HeartBeatReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
 
-	if px.impl.Leader != args.Id {
-		return errors.New("you are not my leader but send me heartbeat")
+	if px.impl.View > args.View {
+		fmt.Printf("px %d view %d: got view %d from peer %d, \n", px.me, px.impl.View, args.View, args.Id)
+		return errors.New("your view is lower than mine")
 	}
 
 	px.impl.Done = args.Done
+	px.impl.Miss_count = 0
 
 	for k, v := range args.Slots {
 		slot := px.addSlots(k)
@@ -106,29 +105,13 @@ func (px *Paxos) ForwardLeader(args *ForwardLeaderArgs, reply *ForwardLeaderStar
 
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	px.mu.Lock()
-	if args.Seq < px.impl.Lowest_slot {
-		px.mu.Unlock()
-		return errors.New("this slot has been garbage collected")
-	}
-	reply.LastestDone = px.impl.Done[px.me]
-	slot := px.addSlots(args.Seq)
-	px.mu.Unlock()
-	slot.mu_.Lock()
-	defer slot.mu_.Unlock()
-	if args.N > slot.Np {
-		reply.Status = OK
-		slot.Np = args.N
-		reply.Na = slot.Na
-		reply.Va = slot.Va
-		reply.Highest_N = args.N
-	} else {
+	if args.View < int64(px.impl.View) {
 		reply.Status = Reject
-		reply.Highest_N = slot.Np
-	}
-	if slot.Status == Decided {
-		reply.V = slot.Value
+		reply.View = int64(px.impl.View)
 	} else {
-		reply.V = nil
+		reply.Status = OK
+		px.impl.View = int(args.View)
+		reply.View = int64(px.impl.View)
 	}
 	return nil
 }
@@ -141,9 +124,11 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	}
 	reply.LastestDone = px.impl.Done[px.me]
 	slot := px.addSlots(args.Seq)
+
 	px.mu.Unlock()
 	slot.mu_.Lock()
 	defer slot.mu_.Unlock()
+	reply.View = slot.Np
 	if args.N >= slot.Np {
 		slot.Np = args.N
 		slot.Na = args.N

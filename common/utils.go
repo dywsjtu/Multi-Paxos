@@ -10,8 +10,6 @@ import (
 
 const PingInterval = time.Millisecond * 1000
 
-const DeadPings = 5
-
 func Nrand() int64 {
 	max := big.NewInt(int64(1) << 62)
 	bigx, _ := rand.Int(rand.Reader, max)
