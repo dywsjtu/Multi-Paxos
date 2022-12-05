@@ -1,6 +1,7 @@
 package paxosrsm
 
 import (
+	// paxos "cos518/proj/multipaxos"
 	"cos518/proj/paxos"
 )
 

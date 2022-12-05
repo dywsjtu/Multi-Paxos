@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	// paxos "cos518/proj/multipaxos"
 	"cos518/proj/paxos"
 	"cos518/proj/paxosrsm"
 )
@@ -83,7 +84,7 @@ func StartServer(servers []string, me int) *KVPaxos {
 	kv.InitImpl()
 
 	os.Remove(servers[me])
-	l, e := net.Listen("tcp", servers[me])
+	l, e := net.Listen("unix", servers[me])
 	if e != nil {
 		log.Fatal("listen error: ", e)
 	}
@@ -98,7 +99,7 @@ func StartServer(servers []string, me int) *KVPaxos {
 					conn.Close()
 				} else if kv.isunreliable() && (rand.Int63()%1000) < 200 {
 					// process the request but force discard of reply.
-					c1 := conn.(*net.TCPConn)
+					c1 := conn.(*net.UnixConn)
 					f, _ := c1.File()
 					err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)
 					if err != nil {
