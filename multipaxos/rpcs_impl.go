@@ -81,6 +81,7 @@ func (px *Paxos) Tick(args *HeartBeatArgs, replys *HeartBeatReply) error {
 		return errors.New("your view is lower than mine")
 	} else if px.me == args.Id {
 		px.impl.Miss_count = 0
+		return nil
 	}
 
 	px.impl.Done = args.Done

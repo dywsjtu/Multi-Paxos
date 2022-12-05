@@ -1,6 +1,7 @@
 package multipaxos
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -41,7 +42,7 @@ type PaxosSlot struct {
 // your px.impl.* initializations here.
 //
 func (px *Paxos) initImpl() {
-	px.impl.View = 1
+	px.impl.View = 0
 	px.impl.Highest_slot = -1
 	px.impl.Lowest_slot = 0
 	px.impl.Miss_count = 0
@@ -69,8 +70,8 @@ func (px *Paxos) check_heartbeart() {
 	px.mu.Lock()
 	defer px.mu.Unlock()
 	px.impl.Miss_count++
-	// fmt.Printf("i am node %d and my view is %d: my leader is missing for %d \n", px.me, px.impl.View, px.impl.Miss_count)
-	if px.impl.Miss_count > 5 {
+	fmt.Printf("i am node %d and my view is %d: my leader is missing for %d \n", px.me, px.impl.View, px.impl.Miss_count)
+	if px.impl.Miss_count > 3 {
 		// px.impl.View += 1
 		if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me {
 			// fmt.Printf("i am node %d and my view is %d: my leader is dead and i am prepering \n", px.me, px.impl.View)
@@ -116,7 +117,7 @@ func (px *Paxos) prepare() {
 			px.mu.Unlock()
 			return
 		}
-		// fmt.Printf("i am node %d and my view is %d: i have %d majority \n", px.me, px.impl.View, majority_count)
+		fmt.Printf("i am node %d and my view is %d: i have %d majority \n", px.me, px.impl.View, majority_count)
 		if majority_count+1 > len(px.peers)/2 {
 			if highest_view <= int64(px.impl.View+1) {
 				px.impl.Leader_dead = false
@@ -202,15 +203,28 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	// fmt.Printf("i am node %d and my view is %d: i am starting seq %d with %v\n", px.me, px.impl.View, seq, v)
 	slot := px.addSlots(seq)
 	if slot.Status != Decided {
-		if px.impl.View%len(px.peers) == px.me {
-			if !px.impl.Leader_dead {
-				go px.StartOnNewSlot(seq, v, slot)
+		for {
+			if px.impl.View%len(px.peers) == px.me {
+				if !px.impl.Leader_dead {
+					go px.StartOnNewSlot(seq, v, slot)
+					break
+				}
+			} else {
+				// fmt.Printf("i am node %d and my view is %d: i am forwarding to the leader \n", px.me, px.impl.View)
+				fmt.Printf("i am node %d and my view is %d: i am forwarding to the leader \n", px.me, px.impl.View)
+				args := &ForwardLeaderArgs{seq, v}
+				reply := &ForwardLeaderStartReply{}
+				if common.Call(px.peers[px.impl.View%len(px.peers)], "Paxos.ForwardLeader", args, reply) {
+					break
+				} else {
+					px.mu.Unlock()
+					time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
+					px.mu.Lock()
+				}
+				// args := &ForwardLeaderArgs{seq, v}
+				// reply := &ForwardLeaderStartReply{}
+				// go common.Call(px.peers[px.impl.View%len(px.peers)], "Paxos.ForwardLeader", args, reply)
 			}
-		} else {
-			// fmt.Printf("i am node %d and my view is %d: i am forwarding to the leader \n", px.me, px.impl.View)
-			args := &ForwardLeaderArgs{seq, v}
-			reply := &ForwardLeaderStartReply{}
-			go common.Call(px.peers[px.impl.View%len(px.peers)], "Paxos.ForwardLeader", args, reply)
 		}
 	}
 }
