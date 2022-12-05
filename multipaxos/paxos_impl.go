@@ -74,6 +74,7 @@ func (px *Paxos) check_heartbeart() {
 		px.impl.View += 1
 		px.impl.Miss_count = 0
 		px.impl.Leader_dead = true
+		fmt.Printf("i am node %d and my view is %d: my leader is dead \n", px.me, px.impl.View)
 		go px.prepare()
 	}
 }
@@ -108,30 +109,31 @@ func (px *Paxos) prepare() {
 					majority_count++
 				}
 			}
+		}
 
-			if reject_count > len(px.peers)/2 {
-				px.mu.Lock()
+		px.mu.Lock()
+		if reject_count > len(px.peers)/2 {
+			px.impl.View = int(highest_view)
+			px.impl.Leader_dead = false
+			px.mu.Unlock()
+			return
+		}
+
+		if majority_count > len(px.peers)/2 {
+			if highest_view <= int64(px.impl.View) {
+				px.impl.Leader_dead = false
+				px.mu.Unlock()
+				return
+			} else {
 				px.impl.View = int(highest_view)
 				px.impl.Leader_dead = false
 				px.mu.Unlock()
 				return
 			}
-
-			if majority_count > len(px.peers)/2 {
-				px.mu.Lock()
-				if highest_view <= int64(px.impl.View) {
-					px.impl.Leader_dead = false
-					px.mu.Unlock()
-					return
-				} else {
-					px.impl.View = int(highest_view)
-					px.impl.Leader_dead = false
-					px.mu.Unlock()
-					return
-				}
-			}
-			
 		}
+
+		px.mu.Unlock()
+		time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
 	}
 }
 
@@ -139,7 +141,6 @@ func (px *Paxos) tick() {
 	px.mu.Lock()
 
 	if px.impl.View%len(px.peers) != px.me {
-		fmt.Printf("I am in Leader role but Leader is not me %d but %d", px.me, px.impl.View%len(px.peers))
 		px.mu.Unlock()
 		return
 	}
@@ -266,7 +267,13 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 			}
 		}
 
-		if 
+		if highest_view > int64(px.impl.View) {
+			px.mu.Lock()
+			px.impl.View = int(highest_view)
+			px.impl.Leader_dead = false
+			px.mu.Unlock()
+			return
+		}
 
 		if majority_count <= len(px.peers)/2 && !isDecidedAcc {
 			slot.mu.Unlock()

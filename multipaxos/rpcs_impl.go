@@ -77,7 +77,7 @@ func (px *Paxos) Tick(args *HeartBeatArgs, replys *HeartBeatReply) error {
 	defer px.mu.Unlock()
 
 	if px.impl.View > args.View {
-		fmt.Printf("px %d view %d: got view %d from peer %d, \n", px.me, px.impl.View, args.View, args.Id)
+		fmt.Printf("px %d view %d: got view %d from peer %d ... \n", px.me, px.impl.View, args.View, args.Id)
 		return errors.New("your view is lower than mine")
 	}
 
