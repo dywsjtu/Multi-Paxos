@@ -79,6 +79,8 @@ func (px *Paxos) Tick(args *HeartBeatArgs, replys *HeartBeatReply) error {
 	if px.impl.View > args.View {
 		fmt.Printf("px %d view %d: got view %d from peer %d ... \n", px.me, px.impl.View, args.View, args.Id)
 		return errors.New("your view is lower than mine")
+	} else if px.me == args.Id {
+		px.impl.Miss_count = 0
 	}
 
 	px.impl.Done = args.Done
@@ -87,7 +89,7 @@ func (px *Paxos) Tick(args *HeartBeatArgs, replys *HeartBeatReply) error {
 	for k, v := range args.Slots {
 		slot := px.addSlots(k)
 		slot.mu_.Lock()
-		if slot.Status != Decided && v.Status == Decided {
+		if slot.Status != Decided {
 			slot.Status = Decided
 			slot.Value = v.Value
 		}
@@ -105,6 +107,8 @@ func (px *Paxos) ForwardLeader(args *ForwardLeaderArgs, reply *ForwardLeaderStar
 
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	px.mu.Lock()
+	defer px.mu.Unlock()
+	// fmt.Printf("px %d view %d: got prepare from peer %d with view %d... \n", px.me, px.impl.View, args.Id, args.View)
 	if args.View < int64(px.impl.View) {
 		reply.Status = Reject
 		reply.View = int64(px.impl.View)
@@ -113,6 +117,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 		px.impl.View = int(args.View)
 		reply.View = int64(px.impl.View)
 	}
+	// fmt.Printf("px %d view %d: accept prepare from peer %d with view %d... \n", px.me, px.impl.View, args.Id, args.View)
 	return nil
 }
 

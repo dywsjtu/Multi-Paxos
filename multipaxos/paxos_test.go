@@ -193,49 +193,6 @@ func TestBasic(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestDeaf(t *testing.T) {
-	runtime.GOMAXPROCS(4)
-
-	const npaxos = 5
-	var pxa []*Paxos = make([]*Paxos, npaxos)
-	var pxh []string = make([]string, npaxos)
-	defer cleanup(pxa)
-
-	for i := 0; i < npaxos; i++ {
-		pxh[i] = port("deaf", i)
-	}
-	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
-	}
-
-	fmt.Printf("Test: Deaf proposer ...\n")
-
-	pxa[0].Start(0, "hello")
-	waitn(t, pxa, 0, npaxos, "hello")
-
-	os.Remove(pxh[0])
-	os.Remove(pxh[npaxos-1])
-
-	pxa[1].Start(1, "goodbye")
-	waitmajority(t, pxa, 1, "goodbye")
-	time.Sleep(1 * time.Second)
-	if ndecided(t, pxa, 1, "goodbye") != npaxos-2 {
-		t.Fatalf("a deaf peer heard about a decision")
-	}
-
-	pxa[0].Start(1, "xxx")
-	waitn(t, pxa, 1, npaxos-1, "goodbye")
-	time.Sleep(1 * time.Second)
-	if ndecided(t, pxa, 1, "goodbye") != npaxos-1 {
-		t.Fatalf("a deaf peer heard about a decision")
-	}
-
-	pxa[npaxos-1].Start(1, "yyy")
-	waitn(t, pxa, 1, npaxos, "goodbye")
-
-	fmt.Printf("  ... Passed\n")
-}
-
 func TestForget(t *testing.T) {
 	runtime.GOMAXPROCS(4)
 

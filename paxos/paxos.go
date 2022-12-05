@@ -107,7 +107,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 		// prepare to receive connections from clients.
 		// change "unix" to "tcp" to use over a network.
 		os.Remove(peers[me]) // only needed for "unix"
-		l, e := net.Listen("tcp", peers[me])
+		l, e := net.Listen("unix", peers[me])
 		if e != nil {
 			log.Fatal("listen error: ", e)
 		}
@@ -123,7 +123,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 						conn.Close()
 					} else if px.isunreliable() && (rand.Int63()%1000) < 200 {
 						// process the request but force discard of reply.
-						c1 := conn.(*net.TCPConn)
+						c1 := conn.(*net.UnixConn)
 						f, _ := c1.File()
 						err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)
 						if err != nil {
