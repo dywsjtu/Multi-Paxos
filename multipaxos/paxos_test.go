@@ -718,9 +718,9 @@ func TestPartition(t *testing.T) {
 
 	fmt.Printf("Test: All agree after full heal ...\n")
 
+	part(t, tag, npaxos, []int{0, 1, 2, 3, 4}, []int{}, []int{})
 	pxa[0].Start(seq, 1000) // poke them
 	pxa[4].Start(seq, 1004)
-	part(t, tag, npaxos, []int{0, 1, 2, 3, 4}, []int{}, []int{})
 
 	waitn(t, pxa, seq, npaxos, 111)
 

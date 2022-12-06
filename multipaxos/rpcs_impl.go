@@ -2,7 +2,6 @@ package multipaxos
 
 import (
 	"errors"
-	"fmt"
 )
 
 // In all data types that represent RPC arguments/reply, field names
@@ -16,12 +15,12 @@ const (
 
 type Response string
 
-type PrepareArgs struct {
+type ElectArgs struct {
 	View int64 // view number
 	Id   int
 }
 
-type PrepareReply struct {
+type ElectReply struct {
 	View   int64 // view number
 	Status string
 }
@@ -70,14 +69,14 @@ type HeartBeatArgs struct {
 
 type HeartBeatReply struct {
 	Status string
+	Slots  map[int]*PaxosSlot
 }
 
-func (px *Paxos) Tick(args *HeartBeatArgs, replys *HeartBeatReply) error {
+func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
 
 	if px.impl.View > args.View {
-		fmt.Printf("px %d view %d: got view %d from peer %d ... \n", px.me, px.impl.View, args.View, args.Id)
 		return errors.New("your view is lower than mine")
 	} else if px.me == args.Id {
 		px.impl.Miss_count = 0
@@ -86,6 +85,19 @@ func (px *Paxos) Tick(args *HeartBeatArgs, replys *HeartBeatReply) error {
 
 	px.impl.Done = args.Done
 	px.impl.Miss_count = 0
+	reply_slots := make(map[int]*PaxosSlot)
+
+	for k, v := range px.impl.Slots {
+		if v.Status == Decided {
+			if _, ok := args.Slots[k]; !ok {
+				decided_value := v.Value
+				slot := initSlot(px.impl.View)
+				slot.Value = decided_value
+				slot.Status = Decided
+				reply_slots[k] = slot
+			}
+		}
+	}
 
 	for k, v := range args.Slots {
 		slot := px.addSlots(k)
@@ -96,6 +108,8 @@ func (px *Paxos) Tick(args *HeartBeatArgs, replys *HeartBeatReply) error {
 		}
 		slot.mu_.Unlock()
 	}
+	reply.Status = OK
+	reply.Slots = reply_slots
 
 	go px.Forget(args.Id, args.Done[args.Id])
 	return nil
@@ -106,10 +120,9 @@ func (px *Paxos) ForwardLeader(args *ForwardLeaderArgs, reply *ForwardLeaderStar
 	return nil
 }
 
-func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
+func (px *Paxos) Elect(args *ElectArgs, reply *ElectReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
-	// fmt.Printf("px %d view %d: got prepare from peer %d with view %d... \n", px.me, px.impl.View, args.Id, args.View)
 	if args.View < int64(px.impl.View) {
 		reply.Status = Reject
 		reply.View = int64(px.impl.View)
@@ -118,7 +131,6 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 		px.impl.View = int(args.View)
 		reply.View = int64(px.impl.View)
 	}
-	// fmt.Printf("px %d view %d: accept prepare from peer %d with view %d... \n", px.me, px.impl.View, args.Id, args.View)
 	return nil
 }
 
@@ -130,13 +142,12 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	}
 	reply.LastestDone = px.impl.Done[px.me]
 	slot := px.addSlots(args.Seq)
-
 	px.mu.Unlock()
 	slot.mu_.Lock()
 	defer slot.mu_.Unlock()
-	reply.View = slot.Np
-	if args.N >= slot.Np {
-		slot.Np = args.N
+	reply.View = slot.Na
+	reply.V = slot.Va
+	if args.N >= slot.Na {
 		slot.Na = args.N
 		slot.Va = args.V
 		reply.Status = OK
