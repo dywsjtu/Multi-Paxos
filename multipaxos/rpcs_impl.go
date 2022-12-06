@@ -21,10 +21,26 @@ type ElectArgs struct {
 }
 
 type ElectReply struct {
-	View   int64 // view number
-	Status string
+	View                 int64  // view number
+	Status               string // OK or Reject
+	Highest_accepted_seq int    // highest accepted sequence number
 }
 
+type PrepareArgs struct {
+	Seq         int
+	N           int64
+	LastestDone int
+	Me          int
+}
+
+type PrepareReply struct {
+	Status      string
+	Na          int64
+	Va          interface{}
+	Highest_N   int64
+	LastestDone int
+	V           interface{}
+}
 type AcceptArgs struct {
 	Seq         int
 	N           int64 // view number
@@ -70,6 +86,37 @@ type HeartBeatArgs struct {
 type HeartBeatReply struct {
 	Status string
 	Slots  map[int]*PaxosSlot
+}
+
+func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
+	px.mu.Lock()
+	if args.Seq < px.impl.Lowest_slot {
+		px.mu.Unlock()
+		return errors.New("this slot has been garbage collected")
+	}
+	reply.LastestDone = px.impl.Done[px.me]
+	slot := px.addSlots(args.Seq)
+	px.mu.Unlock()
+	slot.mu_.Lock()
+	defer slot.mu_.Unlock()
+	if args.N > slot.Np {
+		reply.Status = OK
+		slot.Np = args.N
+		reply.Na = slot.Na
+		reply.Va = slot.Va
+		reply.Highest_N = args.N
+	} else {
+		reply.Status = Reject
+		reply.Na = slot.Na
+		reply.Va = slot.Va
+		reply.Highest_N = slot.Np
+	}
+	if slot.Status == Decided {
+		reply.V = slot.Value
+	} else {
+		reply.V = nil
+	}
+	return nil
 }
 
 func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
@@ -130,6 +177,7 @@ func (px *Paxos) Elect(args *ElectArgs, reply *ElectReply) error {
 		reply.Status = OK
 		px.impl.View = int(args.View)
 		reply.View = int64(px.impl.View)
+		reply.Highest_accepted_seq = px.impl.Highest_accepted_seq
 	}
 	return nil
 }
@@ -151,6 +199,11 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 		slot.Na = args.N
 		slot.Va = args.V
 		reply.Status = OK
+		px.mu.Lock()
+		if args.Seq > px.impl.Highest_accepted_seq {
+			px.impl.Highest_accepted_seq = args.Seq
+		}
+		px.mu.Unlock()
 	} else {
 		reply.Status = Reject
 	}

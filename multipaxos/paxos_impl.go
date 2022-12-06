@@ -27,13 +27,15 @@ type Ballot struct {
 }
 
 type PaxosSlot struct {
-	N      int64
-	Na     int64
-	Va     interface{}
-	mu     sync.Mutex
-	mu_    sync.Mutex
-	Value  interface{}
-	Status Fate
+	N         int64
+	Np        int64
+	Na        int64
+	Va        interface{}
+	Highest_N int64
+	mu        sync.Mutex
+	mu_       sync.Mutex
+	Value     interface{}
+	Status    Fate
 }
 
 //
@@ -84,6 +86,7 @@ func (px *Paxos) elect() {
 		majority_count := 0
 		reject_count := 0
 		highest_view := int64(-1)
+		highest_accpeted_seq := -1
 		for i, peer := range px.peers {
 			px.mu.Lock()
 			args := &ElectArgs{int64(px.impl.View + 1), px.me}
@@ -101,6 +104,9 @@ func (px *Paxos) elect() {
 					}
 				} else {
 					majority_count++
+					if reply.Highest_accepted_seq > highest_accpeted_seq {
+						highest_accpeted_seq = reply.Highest_accepted_seq
+					}
 				}
 			}
 		}
@@ -116,6 +122,9 @@ func (px *Paxos) elect() {
 			if highest_view <= int64(px.impl.View+1) {
 				px.impl.Leader_dead = false
 				px.impl.View += 1
+				if highest_accpeted_seq > px.impl.Highest_accepted_seq {
+					px.impl.Highest_accepted_seq = highest_accpeted_seq
+				}
 				px.mu.Unlock()
 				return
 			} else {
@@ -181,7 +190,9 @@ func initSlot(view int) *PaxosSlot {
 	slot.Value = nil
 	slot.Na = int64(view)
 	slot.Va = nil
-	slot.N = 0
+	slot.Np = -1
+	slot.N = int64(view)
+	slot.Highest_N = int64(view)
 	return slot
 }
 
@@ -231,19 +242,6 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	}
 }
 
-/*
-func StartOnNewSlot(seq, v, slot) {
-	for {
-		if seq < highest_seq_acc {
-			preapare()
-		}
-		accept();
-		learn();
-	}
-}
-
-*/
-
 func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 	slot.mu.Lock()
 	defer slot.mu.Unlock()
@@ -254,69 +252,159 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 		if slot.Status == Decided || px.isdead() {
 			break
 		}
+		//prepera phase
+		isDecidedPrep := false
+		var decidedV interface{}
 		majority_count := 0
 		reject_count := 0
-		highest_view := int64(-1)
+		highest_na := int64(-1)
 		highest_va := v
-		// var decidedV interface{}
-		isDecidedAcc := false
-		// accept phase
-		majority_count = 0
-		reject_count = 0
-		for i, peer := range px.peers {
-			px.mu.Lock()
-			slot.N = int64(px.impl.View)
-			args := &AcceptArgs{seq, slot.N, highest_va, px.me, px.impl.Done[px.me]}
+		na_count_map := make(map[int64](int))
+
+		px.mu.Lock()
+		if seq <= px.impl.Highest_accepted_seq {
+			// fmt.Printf("seq %d is less than highest accepted seq %d \n", seq, px.impl.Highest_accepted_seq)
 			px.mu.Unlock()
-			reply := &AcceptReply{}
-			ok := true
-			if i == px.me {
-				if px.Accept(args, reply) != nil {
-					ok = false
+			for {
+				if slot.N > slot.Highest_N {
+					break
 				}
-			} else {
-				ok = common.Call(peer, "Paxos.Accept", args, reply)
+				slot.N += int64(len(px.peers))
 			}
-			if ok {
-				px.Forget(i, reply.LastestDone)
-				if reply.Status == OK {
-					majority_count += 1
+
+			for i, peer := range px.peers {
+				px.mu.Lock()
+				args := &PrepareArgs{seq, slot.N, px.impl.Done[px.me], px.me}
+				px.mu.Unlock()
+				reply := &PrepareReply{}
+				ok := true
+				if i == px.me {
+					if px.Prepare(args, reply) != nil {
+						ok = false
+					}
 				} else {
-					reject_count += 1
-					if int64(reply.View) > highest_view {
-						highest_view = int64(reply.View)
-						highest_va = reply.V
+					ok = common.Call(peer, "Paxos.Prepare", args, reply)
+				}
+				if ok {
+					px.Forget(i, reply.LastestDone)
+					if reply.Status == OK {
+						majority_count += 1
+						if reply.Na > highest_na {
+							highest_na = reply.Na
+							highest_va = reply.Va
+							na_count_map[highest_na] += 1
+						}
+					} else {
+						reject_count += 1
+						if slot.Highest_N < reply.Highest_N {
+							slot.Highest_N = reply.Highest_N
+						}
+					}
+					if reply.Status == OK && reply.V != nil {
+						isDecidedPrep = true
+						decidedV = reply.V
+						break
+					}
+					if na_count_map[highest_na] > len(px.peers)/2 {
+						isDecidedPrep = true
+						decidedV = highest_va
+						break
 					}
 				}
-				if reply.LastestDone >= seq || reply.V != nil {
-					isDecidedAcc = true
-					// decidedV = reply.V
+				if reject_count > len(px.peers)/2 || majority_count > len(px.peers)/2 || na_count_map[highest_na] > len(px.peers)/2 {
 					break
 				}
 			}
-			if reject_count > len(px.peers)/2 || majority_count > len(px.peers)/2 {
-				break
+			px.mu.Lock()
+			if highest_na > int64(px.impl.View) {
+				px.impl.View = int(highest_na)
+				px.impl.Leader_dead = false
+				px.mu.Unlock()
+				return
+			}
+			px.mu.Unlock()
+
+			if majority_count <= len(px.peers)/2 && !isDecidedPrep {
+				slot.mu.Unlock()
+				time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
+				slot.mu.Lock()
+				continue
+			}
+
+		} else {
+			px.mu.Unlock()
+		}
+
+		if highest_va == nil {
+			highest_va = v
+		}
+
+		// var decidedV interface{}
+		isDecidedAcc := false
+		if !isDecidedPrep {
+			// accept phase
+			majority_count = 0
+			reject_count = 0
+			highest_view := int64(-1)
+			for i, peer := range px.peers {
+				px.mu.Lock()
+				slot.N = int64(px.impl.View)
+				args := &AcceptArgs{seq, slot.N, highest_va, px.me, px.impl.Done[px.me]}
+				px.mu.Unlock()
+				reply := &AcceptReply{}
+				ok := true
+				if i == px.me {
+					if px.Accept(args, reply) != nil {
+						ok = false
+					}
+				} else {
+					ok = common.Call(peer, "Paxos.Accept", args, reply)
+				}
+				if ok {
+					px.Forget(i, reply.LastestDone)
+					if reply.Status == OK {
+						majority_count += 1
+					} else {
+						reject_count += 1
+						if int64(reply.View) > highest_view {
+							highest_view = int64(reply.View)
+							highest_va = reply.V
+						}
+					}
+					if reply.LastestDone >= seq || reply.V != nil {
+						isDecidedAcc = true
+						decidedV = reply.V
+						break
+					}
+				}
+				if reject_count > len(px.peers)/2 || majority_count > len(px.peers)/2 {
+					break
+				}
+			}
+
+			if isDecidedAcc {
+				return
+			}
+
+			px.mu.Lock()
+			if highest_view > int64(px.impl.View) {
+				px.impl.View = int(highest_view)
+				px.impl.Leader_dead = false
+				px.mu.Unlock()
+				return
+			}
+			px.mu.Unlock()
+
+			if majority_count <= len(px.peers)/2 && !isDecidedAcc {
+				slot.mu.Unlock()
+				time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
+				slot.mu.Lock()
+				continue
 			}
 		}
 
-		if isDecidedAcc {
-			return
-		}
-
-		px.mu.Lock()
-		if highest_view > int64(px.impl.View) {
-			px.impl.View = int(highest_view)
-			px.impl.Leader_dead = false
-			px.mu.Unlock()
-			return
-		}
-		px.mu.Unlock()
-
-		if majority_count <= len(px.peers)/2 && !isDecidedAcc {
-			slot.mu.Unlock()
-			time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
-			slot.mu.Lock()
-			continue
+		if isDecidedAcc || isDecidedPrep {
+			highest_va = decidedV
 		}
 
 		// learn phase
