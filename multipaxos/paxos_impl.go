@@ -19,6 +19,8 @@ type PaxosImpl struct {
 	Miss_count           int
 	Leader_dead          bool
 	Highest_accepted_seq int
+	Election_requested   bool
+	In_election          bool
 }
 
 type Ballot struct {
@@ -49,6 +51,8 @@ func (px *Paxos) initImpl() {
 	px.impl.Leader_dead = false
 	px.impl.Slots = make(map[int]*PaxosSlot)
 	px.impl.Highest_accepted_seq = -1
+	px.impl.Election_requested = false
+	px.impl.In_election = false
 	for i := 0; i < len(px.peers); i++ {
 		px.impl.Done = append(px.impl.Done, -1)
 	}
@@ -71,17 +75,17 @@ func (px *Paxos) check_heartbeart() {
 	px.mu.Lock()
 	defer px.mu.Unlock()
 	px.impl.Miss_count++
-
-	if px.impl.Miss_count > 4 {
-		if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me {
+	if px.impl.Miss_count > common.MaxMissingPings {
+		if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me && !px.impl.In_election {
 			go px.elect()
+			px.impl.In_election = true
 		}
 		px.impl.Miss_count = 0
 		px.impl.Leader_dead = true
 	}
 }
 
-func (px *Paxos) elect() {
+func (px *Paxos) elect() error {
 	for {
 		majority_count := 0
 		reject_count := 0
@@ -115,8 +119,9 @@ func (px *Paxos) elect() {
 		if reject_count > 0 {
 			px.impl.View = int(highest_view)
 			px.impl.Leader_dead = false
+			px.impl.In_election = false
 			px.mu.Unlock()
-			return
+			return nil
 		}
 		if majority_count+1 > len(px.peers)/2 {
 			if highest_view <= int64(px.impl.View+1) {
@@ -125,13 +130,15 @@ func (px *Paxos) elect() {
 				if highest_accpeted_seq > px.impl.Highest_accepted_seq {
 					px.impl.Highest_accepted_seq = highest_accpeted_seq
 				}
+				px.impl.In_election = false
 				px.mu.Unlock()
-				return
+				return nil
 			} else {
 				px.impl.View = int(highest_view)
 				px.impl.Leader_dead = false
+				px.impl.In_election = false
 				px.mu.Unlock()
-				return
+				return nil
 			}
 		}
 
@@ -248,6 +255,7 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 	if slot.Status == Decided || slot.Status == Forgotten {
 		return
 	}
+
 	for {
 		if slot.Status == Decided || px.isdead() {
 			break
@@ -263,7 +271,6 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 
 		px.mu.Lock()
 		if seq <= px.impl.Highest_accepted_seq {
-			// fmt.Printf("seq %d is less than highest accepted seq %d \n", seq, px.impl.Highest_accepted_seq)
 			px.mu.Unlock()
 			for {
 				if slot.N > slot.Highest_N {

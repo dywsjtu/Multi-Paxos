@@ -122,6 +122,10 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
+	if px.me == args.Id {
+		px.impl.Miss_count = 0
+		return nil
+	}
 
 	if px.impl.View > args.View {
 		return errors.New("your view is lower than mine")
@@ -132,6 +136,7 @@ func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 
 	px.impl.Done = args.Done
 	px.impl.Miss_count = 0
+
 	reply_slots := make(map[int]*PaxosSlot)
 
 	for k, v := range px.impl.Slots {
@@ -170,14 +175,14 @@ func (px *Paxos) ForwardLeader(args *ForwardLeaderArgs, reply *ForwardLeaderStar
 func (px *Paxos) Elect(args *ElectArgs, reply *ElectReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
-	if args.View < int64(px.impl.View) {
-		reply.Status = Reject
-		reply.View = int64(px.impl.View)
-	} else {
+	if args.View > int64(px.impl.View) {
 		reply.Status = OK
 		px.impl.View = int(args.View)
 		reply.View = int64(px.impl.View)
 		reply.Highest_accepted_seq = px.impl.Highest_accepted_seq
+	} else {
+		reply.Status = Reject
+		reply.View = int64(px.impl.View)
 	}
 	return nil
 }
@@ -190,6 +195,9 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	}
 	reply.LastestDone = px.impl.Done[px.me]
 	slot := px.addSlots(args.Seq)
+	if args.N > int64(px.impl.View) {
+		px.impl.View = int(args.N)
+	}
 	px.mu.Unlock()
 	slot.mu_.Lock()
 	defer slot.mu_.Unlock()

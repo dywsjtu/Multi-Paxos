@@ -314,7 +314,7 @@ func TestPartition(t *testing.T) {
 
 	select {
 	case <-done0:
-	case <-time.After(30 * 100 * time.Millisecond):
+	case <-time.After(100 * 100 * time.Millisecond):
 		t.Fatalf("Put did not complete")
 	}
 

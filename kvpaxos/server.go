@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	// paxos "cos518/proj/multipaxos"
-	"cos518/proj/paxos"
+	paxos "cos518/proj/multipaxos"
+	// "cos518/proj/paxos"
 	"cos518/proj/paxosrsm"
 )
 
