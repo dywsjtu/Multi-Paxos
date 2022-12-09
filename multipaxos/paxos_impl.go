@@ -76,9 +76,8 @@ func (px *Paxos) check_heartbeart() {
 	defer px.mu.Unlock()
 	px.impl.Miss_count++
 	if px.impl.Miss_count > common.MaxMissingPings {
-		if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me && !px.impl.In_election {
+		if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me {
 			go px.elect()
-			px.impl.In_election = true
 		}
 		px.impl.Miss_count = 0
 		px.impl.Leader_dead = true
