@@ -738,7 +738,7 @@ func TestPartition(t *testing.T) {
 		if ndecided(t, pxa, seq, seq*10) > 3 {
 			t.Fatalf("too many decided")
 		}
-		fmt.Printf("  ... Passed %d \n", iters)
+		// fmt.Printf("  ... Passed %d \n", iters)
 		part(t, tag, npaxos, []int{0, 1}, []int{2, 3, 4}, []int{})
 		waitn(t, pxa, seq, npaxos, seq*10)
 	}

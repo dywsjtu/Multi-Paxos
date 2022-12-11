@@ -1,7 +1,6 @@
 package multipaxos
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -147,7 +146,6 @@ func (px *Paxos) elect(offset int) error {
 
 func (px *Paxos) tick() {
 	px.mu.Lock()
-	fmt.Printf("i am node %d, leader is %d \n", px.me, px.impl.View%len(px.peers))
 	if px.impl.View%len(px.peers) != px.me {
 		px.mu.Unlock()
 		return
@@ -338,8 +336,6 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 			}
 
 		} else {
-			fmt.Printf("Skip prepare phase, seq: %d ", seq)
-			fmt.Printf(" i am node %d, leader is %d highest_accepted_seq is %d \n", px.me, px.impl.View%len(px.peers), px.impl.Highest_accepted_seq)
 			px.mu.Unlock()
 		}
 
@@ -371,9 +367,6 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 				if ok {
 					px.Forget(i, reply.LastestDone)
 					if reply.Status == OK {
-						px.mu.Lock()
-						fmt.Printf("i am node %d, leader is %d highest_accepted_seq is %d, seq: %d, accepted by %d \n", px.me, px.impl.View%len(px.peers), px.impl.Highest_accepted_seq, seq, i)
-						px.mu.Unlock()
 						majority_count += 1
 					} else {
 						reject_count += 1
