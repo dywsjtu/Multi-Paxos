@@ -2,6 +2,7 @@ package multipaxos
 
 import (
 	"errors"
+	"fmt"
 )
 
 // In all data types that represent RPC arguments/reply, field names
@@ -129,13 +130,14 @@ func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 
 	if px.impl.View > args.View {
 		return errors.New("your view is lower than mine")
-	} else if px.me == args.Id {
+	} else if px.impl.View < args.View {
+		px.impl.Miss_count = 5
+		fmt.Printf("your view is higher than mine\n")
+	} else {
 		px.impl.Miss_count = 0
-		return nil
 	}
 
 	px.impl.Done = args.Done
-	px.impl.Miss_count = 0
 
 	reply_slots := make(map[int]*PaxosSlot)
 
@@ -192,6 +194,10 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	if args.Seq < px.impl.Lowest_slot {
 		px.mu.Unlock()
 		return errors.New("this slot has been garbage collected")
+	}
+	if args.N < int64(px.impl.View) {
+		px.mu.Unlock()
+		return errors.New("you have lower view than me")
 	}
 	reply.LastestDone = px.impl.Done[px.me]
 	slot := px.addSlots(args.Seq)

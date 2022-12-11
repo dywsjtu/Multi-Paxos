@@ -607,7 +607,7 @@ func TestManyUnreliable(t *testing.T) {
 		pxa[i].Start(0, 0)
 	}
 
-	const ninst = 50
+	const ninst = 2
 	for seq := 1; seq < ninst; seq++ {
 		// only 3 active instances, to limit the
 		// number of file descriptors.
@@ -738,7 +738,7 @@ func TestPartition(t *testing.T) {
 		if ndecided(t, pxa, seq, seq*10) > 3 {
 			t.Fatalf("too many decided")
 		}
-
+		fmt.Printf("  ... Passed %d \n", iters)
 		part(t, tag, npaxos, []int{0, 1}, []int{2, 3, 4}, []int{})
 		waitn(t, pxa, seq, npaxos, seq*10)
 	}

@@ -1,6 +1,7 @@
 package multipaxos
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -20,7 +21,6 @@ type PaxosImpl struct {
 	Leader_dead          bool
 	Highest_accepted_seq int
 	Election_requested   bool
-	In_election          bool
 }
 
 type Ballot struct {
@@ -52,7 +52,6 @@ func (px *Paxos) initImpl() {
 	px.impl.Slots = make(map[int]*PaxosSlot)
 	px.impl.Highest_accepted_seq = -1
 	px.impl.Election_requested = false
-	px.impl.In_election = false
 	for i := 0; i < len(px.peers); i++ {
 		px.impl.Done = append(px.impl.Done, -1)
 	}
@@ -76,23 +75,26 @@ func (px *Paxos) check_heartbeart() {
 	defer px.mu.Unlock()
 	px.impl.Miss_count++
 	if px.impl.Miss_count > common.MaxMissingPings {
-		if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me {
-			go px.elect()
+		if !px.impl.Leader_dead {
+			if (px.impl.View+2)%len(px.peers) == px.me {
+				go px.elect(2)
+			}
 		}
 		px.impl.Miss_count = 0
 		px.impl.Leader_dead = true
 	}
 }
 
-func (px *Paxos) elect() error {
+func (px *Paxos) elect(offset int) error {
 	for {
 		majority_count := 0
 		reject_count := 0
 		highest_view := int64(-1)
 		highest_accpeted_seq := -1
+
 		for i, peer := range px.peers {
 			px.mu.Lock()
-			args := &ElectArgs{int64(px.impl.View + 1), px.me}
+			args := &ElectArgs{int64(px.impl.View + offset), px.me}
 			px.mu.Unlock()
 			reply := &ElectReply{}
 			ok := true
@@ -118,24 +120,21 @@ func (px *Paxos) elect() error {
 		if reject_count > 0 {
 			px.impl.View = int(highest_view)
 			px.impl.Leader_dead = false
-			px.impl.In_election = false
 			px.mu.Unlock()
 			return nil
 		}
 		if majority_count+1 > len(px.peers)/2 {
 			if highest_view <= int64(px.impl.View+1) {
 				px.impl.Leader_dead = false
-				px.impl.View += 1
+				px.impl.View += offset
 				if highest_accpeted_seq > px.impl.Highest_accepted_seq {
 					px.impl.Highest_accepted_seq = highest_accpeted_seq
 				}
-				px.impl.In_election = false
 				px.mu.Unlock()
 				return nil
 			} else {
 				px.impl.View = int(highest_view)
 				px.impl.Leader_dead = false
-				px.impl.In_election = false
 				px.mu.Unlock()
 				return nil
 			}
@@ -148,6 +147,7 @@ func (px *Paxos) elect() error {
 
 func (px *Paxos) tick() {
 	px.mu.Lock()
+	fmt.Printf("i am node %d, leader is %d \n", px.me, px.impl.View%len(px.peers))
 	if px.impl.View%len(px.peers) != px.me {
 		px.mu.Unlock()
 		return
@@ -338,6 +338,8 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 			}
 
 		} else {
+			fmt.Printf("Skip prepare phase, seq: %d ", seq)
+			fmt.Printf(" i am node %d, leader is %d highest_accepted_seq is %d \n", px.me, px.impl.View%len(px.peers), px.impl.Highest_accepted_seq)
 			px.mu.Unlock()
 		}
 
@@ -369,6 +371,9 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 				if ok {
 					px.Forget(i, reply.LastestDone)
 					if reply.Status == OK {
+						px.mu.Lock()
+						fmt.Printf("i am node %d, leader is %d highest_accepted_seq is %d, seq: %d, accepted by %d \n", px.me, px.impl.View%len(px.peers), px.impl.Highest_accepted_seq, seq, i)
+						px.mu.Unlock()
 						majority_count += 1
 					} else {
 						reject_count += 1
