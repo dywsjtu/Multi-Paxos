@@ -2,7 +2,6 @@ package common
 
 import (
 	"crypto/rand"
-	"fmt"
 	"math/big"
 	"net/rpc"
 	"time"
@@ -46,6 +45,6 @@ func Call(srv string, rpcname string,
 		return true
 	}
 
-	fmt.Println(err)
+	// fmt.Println(err)
 	return false
 }
