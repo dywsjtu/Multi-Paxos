@@ -123,6 +123,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
+	fmt.Printf("Node: %d, receive tick from %d, with view %d\n", px.me, args.Id, args.View)
 	if px.me == args.Id {
 		px.impl.Miss_count = 0
 		return nil
@@ -130,14 +131,10 @@ func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 
 	if px.impl.View > args.View {
 		return errors.New("your view is lower than mine")
-	} else if px.impl.View < args.View {
-		px.impl.Miss_count = 5
-		fmt.Printf("your view is higher than mine\n")
-	} else {
-		px.impl.Miss_count = 0
 	}
 
 	px.impl.Done = args.Done
+	px.impl.Miss_count = 0
 
 	reply_slots := make(map[int]*PaxosSlot)
 
@@ -170,6 +167,7 @@ func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 }
 
 func (px *Paxos) ForwardLeader(args *ForwardLeaderArgs, reply *ForwardLeaderStartReply) error {
+	fmt.Printf("Node: %d, receive forward, with seq %d and value %v\n", px.me, args.Seq, args.V)
 	px.Start(args.Seq, args.V)
 	return nil
 }
@@ -178,6 +176,13 @@ func (px *Paxos) Elect(args *ElectArgs, reply *ElectReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
 	if args.View > int64(px.impl.View) {
+		reply.Status = OK
+		px.impl.View = int(args.View)
+		reply.View = int64(px.impl.View)
+		px.impl.Leader_dead = false
+		px.impl.Miss_count = 0
+		reply.Highest_accepted_seq = px.impl.Highest_accepted_seq
+	} else if args.View == int64(px.impl.View) {
 		reply.Status = OK
 		px.impl.View = int(args.View)
 		reply.View = int64(px.impl.View)
@@ -195,14 +200,12 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 		px.mu.Unlock()
 		return errors.New("this slot has been garbage collected")
 	}
-	if args.N < int64(px.impl.View) {
-		px.mu.Unlock()
-		return errors.New("you have lower view than me")
-	}
 	reply.LastestDone = px.impl.Done[px.me]
 	slot := px.addSlots(args.Seq)
 	if args.N > int64(px.impl.View) {
 		px.impl.View = int(args.N)
+		px.impl.Leader_dead = false
+		px.impl.Miss_count = 0
 	}
 	px.mu.Unlock()
 	slot.mu_.Lock()

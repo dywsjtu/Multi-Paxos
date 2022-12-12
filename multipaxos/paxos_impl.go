@@ -1,6 +1,7 @@
 package multipaxos
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ type PaxosImpl struct {
 	Leader_dead          bool
 	Highest_accepted_seq int
 	Election_requested   bool
+	In_election          bool
 }
 
 type Ballot struct {
@@ -74,31 +76,34 @@ func (px *Paxos) check_heartbeart() {
 	defer px.mu.Unlock()
 	px.impl.Miss_count++
 	if px.impl.Miss_count > common.MaxMissingPings {
-		if !px.impl.Leader_dead {
-			if (px.impl.View+2)%len(px.peers) == px.me {
-				go px.elect(2)
-			}
+		fmt.Printf("Node %d: my leader %d is dead\n", px.me, px.impl.View%len(px.peers))
+		if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me {
+			fmt.Printf("Node %d: my leader is dead, start a new election with my view %d \n", px.me, px.impl.View)
+			go px.elect(px.impl.View)
 		}
 		px.impl.Miss_count = 0
 		px.impl.Leader_dead = true
 	}
 }
 
-func (px *Paxos) elect(offset int) error {
+func (px *Paxos) elect(my_view int) error {
 	for {
 		majority_count := 0
 		reject_count := 0
 		highest_view := int64(-1)
 		highest_accpeted_seq := -1
-
 		for i, peer := range px.peers {
 			px.mu.Lock()
-			args := &ElectArgs{int64(px.impl.View + offset), px.me}
+			args := &ElectArgs{int64(my_view + 1), px.me}
 			px.mu.Unlock()
 			reply := &ElectReply{}
 			ok := true
 			if i != px.me {
 				ok = common.Call(peer, "Paxos.Elect", args, reply)
+			} else {
+				if px.Elect(args, reply) != nil {
+					ok = false
+				}
 			}
 			if ok {
 				if reply.Status == Reject {
@@ -106,7 +111,7 @@ func (px *Paxos) elect(offset int) error {
 					if reply.View > highest_view {
 						highest_view = reply.View
 					}
-				} else {
+				} else if reply.Status == OK {
 					majority_count++
 					if reply.Highest_accepted_seq > highest_accpeted_seq {
 						highest_accpeted_seq = reply.Highest_accepted_seq
@@ -117,23 +122,30 @@ func (px *Paxos) elect(offset int) error {
 
 		px.mu.Lock()
 		if reject_count > 0 {
-			px.impl.View = int(highest_view)
-			px.impl.Leader_dead = false
+			if highest_view > int64(px.impl.View) {
+				px.impl.View = int(highest_view)
+				px.impl.Leader_dead = false
+				px.impl.Miss_count = 0
+			}
 			px.mu.Unlock()
 			return nil
 		}
-		if majority_count+1 > len(px.peers)/2 {
-			if highest_view <= int64(px.impl.View+1) {
+		if majority_count > len(px.peers)/2 {
+			if highest_view <= int64(my_view+1) && px.impl.View < my_view+1 {
 				px.impl.Leader_dead = false
-				px.impl.View += offset
+				px.impl.View = my_view + 1
+				px.impl.Miss_count = 0
 				if highest_accpeted_seq > px.impl.Highest_accepted_seq {
 					px.impl.Highest_accepted_seq = highest_accpeted_seq
 				}
 				px.mu.Unlock()
 				return nil
 			} else {
-				px.impl.View = int(highest_view)
-				px.impl.Leader_dead = false
+				if highest_view > int64(px.impl.View) {
+					px.impl.View = int(highest_view)
+					px.impl.Leader_dead = false
+					px.impl.Miss_count = 0
+				}
 				px.mu.Unlock()
 				return nil
 			}
@@ -145,6 +157,7 @@ func (px *Paxos) elect(offset int) error {
 }
 
 func (px *Paxos) tick() {
+	fmt.Printf("Node %d: i am ticking, my view is %d\n", px.me, px.impl.View)
 	px.mu.Lock()
 	if px.impl.View%len(px.peers) != px.me {
 		px.mu.Unlock()
@@ -159,11 +172,13 @@ func (px *Paxos) tick() {
 			slots[k] = slot
 		}
 	}
+	my_view := px.impl.View
 	px.mu.Unlock()
-	if px.impl.View%len(px.peers) == px.me {
+
+	if my_view%len(px.peers) == px.me {
 		for i, peer := range px.peers {
 			px.mu.Lock()
-			args := &HeartBeatArgs{px.me, px.impl.View, px.impl.Done, slots}
+			args := &HeartBeatArgs{px.me, my_view, px.impl.Done, slots}
 			px.mu.Unlock()
 			reply := &HeartBeatReply{}
 			if i != px.me {
@@ -221,21 +236,24 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	if seq < px.impl.Lowest_slot {
 		return
 	}
+	fmt.Printf("Node %d, my view is %d, start on new seq %d \n", px.me, px.impl.View, seq)
 	slot := px.addSlots(seq)
 	if slot.Status != Decided {
 		for {
 			if px.impl.View%len(px.peers) == px.me {
 				if !px.impl.Leader_dead {
-					go px.StartOnNewSlot(seq, v, slot)
+					fmt.Printf("Node %d, my view is %d, i am leader, start on new slot %v\n", px.me, px.impl.View, v)
+					go px.StartOnNewSlot(seq, v, slot, px.impl.View)
 					break
 				}
 			} else {
+				fmt.Printf("Node %d, my view is %d, start on new seq %d forward to leader\n", px.me, px.impl.View, seq)
 				args := &ForwardLeaderArgs{seq, v}
 				reply := &ForwardLeaderStartReply{}
 				if common.Call(px.peers[px.impl.View%len(px.peers)], "Paxos.ForwardLeader", args, reply) {
 					break
 				} else if px.impl.Leader_dead {
-					break
+					continue
 				} else {
 					px.mu.Unlock()
 					time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
@@ -246,7 +264,7 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	}
 }
 
-func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
+func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot, my_view int) {
 	slot.mu.Lock()
 	defer slot.mu.Unlock()
 	if slot.Status == Decided || slot.Status == Forgotten {
@@ -319,14 +337,19 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 					break
 				}
 			}
-			px.mu.Lock()
-			if highest_na > int64(px.impl.View) {
-				px.impl.View = int(highest_na)
-				px.impl.Leader_dead = false
+
+			if highest_na > int64(my_view) {
+				px.mu.Lock()
+				if highest_na > int64(px.impl.View) {
+					px.impl.View = int(highest_na)
+					px.impl.Leader_dead = false
+					px.impl.Miss_count = 0
+					px.mu.Unlock()
+					return
+				}
 				px.mu.Unlock()
 				return
 			}
-			px.mu.Unlock()
 
 			if majority_count <= len(px.peers)/2 && !isDecidedPrep {
 				slot.mu.Unlock()
@@ -351,10 +374,9 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 			reject_count = 0
 			highest_view := int64(-1)
 			for i, peer := range px.peers {
-				px.mu.Lock()
-				slot.N = int64(px.impl.View)
-				args := &AcceptArgs{seq, slot.N, highest_va, px.me, px.impl.Done[px.me]}
-				px.mu.Unlock()
+				// px.mu.Lock()
+				args := &AcceptArgs{seq, int64(my_view), highest_va, px.me, px.impl.Done[px.me]}
+				// px.mu.Unlock()
 				reply := &AcceptReply{}
 				ok := true
 				if i == px.me {
@@ -372,7 +394,7 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 						reject_count += 1
 						if int64(reply.View) > highest_view {
 							highest_view = int64(reply.View)
-							highest_va = reply.V
+							// highest_va = reply.V
 						}
 					}
 					if reply.LastestDone >= seq || reply.V != nil {
@@ -389,16 +411,19 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot) {
 			if isDecidedAcc {
 				return
 			}
-
-			px.mu.Lock()
-			if highest_view > int64(px.impl.View) {
-				px.impl.View = int(highest_view)
-				px.impl.Leader_dead = false
+			if highest_view > int64(my_view) {
+				px.mu.Lock()
+				if highest_view > int64(px.impl.View) {
+					px.impl.View = int(highest_view)
+					px.impl.Leader_dead = false
+					px.impl.Miss_count = 0
+					px.mu.Unlock()
+					return
+				}
 				px.mu.Unlock()
 				return
-			}
-			px.mu.Unlock()
 
+			}
 			if majority_count <= len(px.peers)/2 && !isDecidedAcc {
 				slot.mu.Unlock()
 				time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)
