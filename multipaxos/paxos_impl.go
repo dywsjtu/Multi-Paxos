@@ -75,7 +75,7 @@ func (px *Paxos) check_heartbeart() {
 	defer px.mu.Unlock()
 	px.impl.Miss_count++
 	if px.impl.Miss_count > common.MaxMissingPings {
-		//fmt.Printf("Node %d: my leader %d is dead\n", px.me, px.impl.View%len(px.peers))
+		// //fmt.Printf("Node %d: my leader %d is dead\n", px.me, px.impl.View%len(px.peers))
 		// if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me {
 		// 	//fmt.Printf("Node %d: my leader is dead, start a new election with my view %d \n", px.me, px.impl.View)
 		// 	go px.elect(px.impl.View, 1)
@@ -276,6 +276,7 @@ func (px *Paxos) StartOnForward(seq int, v interface{}) {
 		}
 		args := &ForwardLeaderArgs{seq, v}
 		reply := &ForwardLeaderStartReply{}
+		//fmt.Printf("Node %d, my view is %d, start on new seq %d forward to leader\n", px.me, px.impl.View, seq)
 		if common.Call(px.peers[px.impl.View%len(px.peers)], "Paxos.ForwardLeader", args, reply) {
 			break
 		} else {
@@ -445,12 +446,12 @@ func (px *Paxos) StartOnNewSlot(seq int, v interface{}, slot *PaxosSlot, my_view
 					px.impl.Leader_dead = false
 					px.impl.Miss_count = 0
 					px.mu.Unlock()
-					//fmt.Printf("Node %d, my view was %d now is %d, highest view %d is higher than my current view accept phase fails\n", px.me, my_view, px.impl.View, highest_na)
+					//fmt.Printf("Node %d, my view was %d, highest view %d is higher than my current view %d accept phase fails\n", px.me, my_view, highest_view, px.impl.View)
 					go px.StartOnForward(seq, v)
 					return
 				}
 
-				//fmt.Printf("Node %d, my view was %d now is %d, highest view %d is higher than my previous view accept phase fails\n", px.me, my_view, my_view, highest_na)
+				//fmt.Printf("Node %d, my view was %d now is %d, highest view %d is higher than my previous view accept phase fails\n", px.me, my_view, px.impl.View, highest_view)
 				px.mu.Unlock()
 				go px.StartOnForward(seq, v)
 				return
