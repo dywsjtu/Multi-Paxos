@@ -132,6 +132,13 @@ func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 		return errors.New("your view is lower than mine")
 	}
 
+	if px.impl.View < args.View {
+		//fmt.Printf("Node: %d, view changed from %d to %d because TICK from node %d with view %d\n", px.me, px.impl.View, args.View, args.Id, args.View)
+		px.impl.View = args.View
+		px.impl.Leader_dead = false
+		px.impl.Miss_count = 0
+	}
+
 	px.impl.Done = args.Done
 	px.impl.Miss_count = 0
 
@@ -168,6 +175,7 @@ func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 func (px *Paxos) ForwardLeader(args *ForwardLeaderArgs, reply *ForwardLeaderStartReply) error {
 	//fmt.Printf("Node: %d, receive forward, with seq %d and value %v\n", px.me, args.Seq, args.V)
 	px.Start(args.Seq, args.V)
+	reply.Status = OK
 	return nil
 }
 
@@ -176,6 +184,7 @@ func (px *Paxos) Elect(args *ElectArgs, reply *ElectReply) error {
 	defer px.mu.Unlock()
 	if args.View > int64(px.impl.View) {
 		reply.Status = OK
+		//fmt.Printf("Node: %d, view changed from %d to %d because ELECTION from node %d with view %d\n", px.me, px.impl.View, args.View, args.Id, args.View)
 		px.impl.View = int(args.View)
 		reply.View = int64(px.impl.View)
 		px.impl.Leader_dead = false
@@ -183,7 +192,6 @@ func (px *Paxos) Elect(args *ElectArgs, reply *ElectReply) error {
 		reply.Highest_accepted_seq = px.impl.Highest_accepted_seq
 	} else if args.View == int64(px.impl.View) {
 		reply.Status = OK
-		px.impl.View = int(args.View)
 		reply.View = int64(px.impl.View)
 		reply.Highest_accepted_seq = px.impl.Highest_accepted_seq
 	} else {
@@ -202,6 +210,7 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	reply.LastestDone = px.impl.Done[px.me]
 	slot := px.addSlots(args.Seq)
 	if args.N > int64(px.impl.View) {
+		//fmt.Printf("Node: %d, view changed from %d to %d because ACCPET from node %d with view %d\n", px.me, px.impl.View, args.N, args.Me, args.N)
 		px.impl.View = int(args.N)
 		px.impl.Leader_dead = false
 		px.impl.Miss_count = 0
