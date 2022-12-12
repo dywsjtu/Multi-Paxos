@@ -1,7 +1,6 @@
 package multipaxos
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -76,9 +75,9 @@ func (px *Paxos) check_heartbeart() {
 	defer px.mu.Unlock()
 	px.impl.Miss_count++
 	if px.impl.Miss_count > common.MaxMissingPings {
-		fmt.Printf("Node %d: my leader %d is dead\n", px.me, px.impl.View%len(px.peers))
+		//fmt.Printf("Node %d: my leader %d is dead\n", px.me, px.impl.View%len(px.peers))
 		if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me {
-			fmt.Printf("Node %d: my leader is dead, start a new election with my view %d \n", px.me, px.impl.View)
+			//fmt.Printf("Node %d: my leader is dead, start a new election with my view %d \n", px.me, px.impl.View)
 			go px.elect(px.impl.View)
 		}
 		px.impl.Miss_count = 0
@@ -157,7 +156,7 @@ func (px *Paxos) elect(my_view int) error {
 }
 
 func (px *Paxos) tick() {
-	fmt.Printf("Node %d: i am ticking, my view is %d\n", px.me, px.impl.View)
+	//fmt.Printf("Node %d: i am ticking, my view is %d\n", px.me, px.impl.View)
 	px.mu.Lock()
 	if px.impl.View%len(px.peers) != px.me {
 		px.mu.Unlock()
@@ -236,24 +235,24 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	if seq < px.impl.Lowest_slot {
 		return
 	}
-	fmt.Printf("Node %d, my view is %d, start on new seq %d \n", px.me, px.impl.View, seq)
+	//fmt.Printf("Node %d, my view is %d, start on new seq %d \n", px.me, px.impl.View, seq)
 	slot := px.addSlots(seq)
 	if slot.Status != Decided {
 		for {
 			if px.impl.View%len(px.peers) == px.me {
 				if !px.impl.Leader_dead {
-					fmt.Printf("Node %d, my view is %d, i am leader, start on new slot %v\n", px.me, px.impl.View, v)
+					//fmt.Printf("Node %d, my view is %d, i am leader, start on new slot %v\n", px.me, px.impl.View, v)
 					go px.StartOnNewSlot(seq, v, slot, px.impl.View)
 					break
 				}
 			} else {
-				fmt.Printf("Node %d, my view is %d, start on new seq %d forward to leader\n", px.me, px.impl.View, seq)
+				//fmt.Printf("Node %d, my view is %d, start on new seq %d forward to leader\n", px.me, px.impl.View, seq)
 				args := &ForwardLeaderArgs{seq, v}
 				reply := &ForwardLeaderStartReply{}
 				if common.Call(px.peers[px.impl.View%len(px.peers)], "Paxos.ForwardLeader", args, reply) {
 					break
 				} else if px.impl.Leader_dead {
-					continue
+					break
 				} else {
 					px.mu.Unlock()
 					time.Sleep(time.Duration(common.Nrand()%100) * time.Millisecond)

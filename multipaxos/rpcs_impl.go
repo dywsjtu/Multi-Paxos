@@ -2,7 +2,6 @@ package multipaxos
 
 import (
 	"errors"
-	"fmt"
 )
 
 // In all data types that represent RPC arguments/reply, field names
@@ -123,7 +122,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
-	fmt.Printf("Node: %d, receive tick from %d, with view %d\n", px.me, args.Id, args.View)
+	//fmt.Printf("Node: %d, receive tick from %d, with view %d\n", px.me, args.Id, args.View)
 	if px.me == args.Id {
 		px.impl.Miss_count = 0
 		return nil
@@ -167,7 +166,7 @@ func (px *Paxos) Tick(args *HeartBeatArgs, reply *HeartBeatReply) error {
 }
 
 func (px *Paxos) ForwardLeader(args *ForwardLeaderArgs, reply *ForwardLeaderStartReply) error {
-	fmt.Printf("Node: %d, receive forward, with seq %d and value %v\n", px.me, args.Seq, args.V)
+	//fmt.Printf("Node: %d, receive forward, with seq %d and value %v\n", px.me, args.Seq, args.V)
 	px.Start(args.Seq, args.V)
 	return nil
 }
