@@ -3,6 +3,7 @@ package multipaxos
 import (
 	"sync"
 	"time"
+
 	//"fmt"
 	"cos518/proj/common"
 )
@@ -57,8 +58,10 @@ func (px *Paxos) initImpl() {
 	}
 	go func() {
 		for {
-			px.tick()
-			time.Sleep(common.PingInterval)
+			if !px.isdead() {
+				px.tick()
+				time.Sleep(common.PingInterval)
+			}
 		}
 	}()
 
@@ -245,7 +248,7 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	}
 	//fmt.Printf("Node %d, my view is %d, start on new seq %d \n", px.me, px.impl.View, seq)
 	slot := px.addSlots(seq)
-	if slot.Status != Decided {
+	if slot.Status != Decided && !px.isdead() {
 		if px.impl.View%len(px.peers) == px.me {
 			if !px.impl.Leader_dead {
 				//fmt.Printf("Node %d, my view is %d, i am leader, start on new slot %v\n", px.me, px.impl.View, v)
