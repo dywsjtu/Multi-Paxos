@@ -3,7 +3,7 @@ package multipaxos
 import (
 	"sync"
 	"time"
-
+	//"fmt"
 	"cos518/proj/common"
 )
 
@@ -63,10 +63,10 @@ func (px *Paxos) initImpl() {
 	}()
 
 	go func() {
-		for {
-			px.check_heartbeart()
-			time.Sleep(common.PingInterval)
-		}
+		// for {
+		// 	px.check_heartbeart()
+		// 	time.Sleep(common.PingInterval)
+		// }
 	}()
 }
 
@@ -75,19 +75,19 @@ func (px *Paxos) check_heartbeart() {
 	defer px.mu.Unlock()
 	px.impl.Miss_count++
 	if px.impl.Miss_count > common.MaxMissingPings {
-		// //fmt.Printf("Node %d: my leader %d is dead\n", px.me, px.impl.View%len(px.peers))
-		// if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me {
-		// 	//fmt.Printf("Node %d: my leader is dead, start a new election with my view %d \n", px.me, px.impl.View)
-		// 	go px.elect(px.impl.View, 1)
-		// }
-		mod := px.impl.View % len(px.peers)
-		if mod < px.me {
-			//fmt.Printf("Node %d: my leader is dead, start a new election with my view %d and offset %d \n", px.me, px.impl.View, px.me-mod)
-			go px.elect(px.impl.View, px.me-mod)
-		} else if mod > px.me {
-			//fmt.Printf("Node %d: my leader is dead, start a new election with my view %d and offset %d \n", px.me, px.impl.View, px.me+len(px.peers)-mod)
-			go px.elect(px.impl.View, px.me+len(px.peers)-mod)
+		//fmt.Printf("Node %d: my leader %d is dead\n", px.me, px.impl.View%len(px.peers))
+		if !px.impl.Leader_dead && (px.impl.View+1)%len(px.peers) == px.me {
+			//fmt.Printf("Node %d: my leader is dead, start a new election with my view %d \n", px.me, px.impl.View)
+			go px.elect(px.impl.View, 1)
 		}
+		// mod := px.impl.View % len(px.peers)
+		// if mod < px.me {
+		// 	//fmt.Printf("Node %d: my leader is dead, start a new election with my view %d and offset %d \n", px.me, px.impl.View, px.me-mod)
+		// 	go px.elect(px.impl.View, px.me-mod)
+		// } else if mod > px.me {
+		// 	//fmt.Printf("Node %d: my leader is dead, start a new election with my view %d and offset %d \n", px.me, px.impl.View, px.me+len(px.peers)-mod)
+		// 	go px.elect(px.impl.View, px.me+len(px.peers)-mod)
+		// }
 		px.impl.Miss_count = 0
 		px.impl.Leader_dead = true
 	}
@@ -164,7 +164,7 @@ func (px *Paxos) elect(my_view int, offset int) error {
 
 func (px *Paxos) tick() {
 	px.mu.Lock()
-	//fmt.Printf("Node %d: i am ticking, my view is %d\n", px.me, px.impl.View)
+	// fmt.Printf("Node %d: i am ticking, my view is %d\n", px.me, px.impl.View)
 	if px.impl.View%len(px.peers) != px.me {
 		px.mu.Unlock()
 		return
