@@ -3,14 +3,22 @@ package main
 import (
 	"cos518/proj/kvpaxos"
 	"flag"
-	"fmt"
+	"log"
 	"strconv"
+	"time"
 )
 
 func port(tag string, host int) string {
 	s := "localhost:1000"
 	s += strconv.Itoa(host)
 	return s
+}
+
+func timer() {
+	for {
+		log.Printf("+++++++++++++++++++++++++++++")
+		time.Sleep(1 * time.Second)
+	}
 }
 
 func main() {
@@ -21,7 +29,14 @@ func main() {
 	for j := 0; j < *n; j++ {
 		kvh[j] = port("basic", j)
 	}
+	go timer()
 	ck := kvpaxos.MakeClerk(kvh)
-	ck.Put("a", "b")
-	fmt.Println(ck.Get("a"))
+	for {
+		start := time.Now().UnixNano() / int64(time.Millisecond)
+		ck.Put("a", "b")
+		end := time.Now().UnixNano() / int64(time.Millisecond)
+		diff := end - start
+		log.Printf("Duration(ms): %d", diff)
+		// fmt.Println(ck.Get("a"))
+	}
 }
