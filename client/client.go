@@ -3,6 +3,7 @@ package main
 import (
 	"cos518/proj/kvpaxos"
 	"flag"
+	"fmt"
 	"strconv"
 )
 
@@ -13,7 +14,6 @@ func port(tag string, host int) string {
 }
 
 func main() {
-	i := flag.Int("i", 0, "# idx of this server")
 	n := flag.Int("n", 3, "# number of servers")
 	flag.Parse()
 
@@ -21,7 +21,7 @@ func main() {
 	for j := 0; j < *n; j++ {
 		kvh[j] = port("basic", j)
 	}
-	kvpaxos.StartServer(kvh, *i)
-	for {
-	}
+	ck := kvpaxos.MakeClerk(kvh)
+	ck.Put("a", "b")
+	fmt.Println(ck.Get("a"))
 }

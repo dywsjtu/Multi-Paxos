@@ -1,6 +1,9 @@
 package kvpaxos
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 //
 // Define what goes into "value" that Paxos is used to agree upon.
@@ -97,7 +100,7 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 // Execute operation encoded in decided value v and update local state
 //
 func (kv *KVPaxos) ApplyOp(v interface{}) {
-	// fmt.Printf("ApplyOp %v\n", v)
+	fmt.Printf("ApplyOp %v\n", v)
 	operation := v.(Op)
 	if operation.Type == "Put" {
 		kv.impl.data[operation.Key] = operation.Value
