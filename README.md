@@ -1,5 +1,6 @@
 # Implementing and Comparing Paxos and Multi-Paxos
 
+**Yinwei Dai & Rui Pan** at Princeton University
 ## Introduction
 
 Distributed consensus is a cornerstone for distributed systems and applications. 
@@ -8,7 +9,7 @@ Among all the consensus protocols, Paxos is one of the main protocols for solvin
 
 Multi-Paxos is a optimized variant of Paxos when Paxos runs in consecutive rounds, which usually happens when a distributed system needs to reach consensus on a sequence of numbers. By electing a leader only when the leader fails (i.e., only when needed), we can reduce the two-phase process into a one-phase process, which reduces the number of messages that needs to be exchanged and improves latency.
 
-In this project, we implement Paxos, Multi-Paxos as well as a key/value store system from scratch using Go in 3563 lines of code. We open-source our implementation at https://github.com/dywsjtu/Multi-Paxos.
+In this project, we implement **Paxos**, **Multi-Paxos** as well as **a key/value store system** from scratch using Go in **3563** lines of code. We open-source our implementation at https://github.com/dywsjtu/Multi-Paxos.
 
 ## Background
 
