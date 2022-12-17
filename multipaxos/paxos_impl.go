@@ -66,10 +66,10 @@ func (px *Paxos) initImpl() {
 	}()
 
 	go func() {
-		// for {
-		// 	px.check_heartbeart()
-		// 	time.Sleep(common.PingInterval)
-		// }
+		for {
+			px.check_heartbeart()
+			time.Sleep(common.PingInterval)
+		}
 	}()
 }
 
