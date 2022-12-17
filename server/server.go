@@ -7,8 +7,9 @@ import (
 )
 
 func port(tag string, host int) string {
-	s := "localhost:1000"
-	s += strconv.Itoa(host)
+	s := "10.0.0."
+	s += strconv.Itoa(host+2)
+	s += ":8888"
 	return s
 }
 
@@ -21,6 +22,7 @@ func main() {
 	for j := 0; j < *n; j++ {
 		kvh[j] = port("basic", j)
 	}
+
 	kvpaxos.StartServer(kvh, *i)
 	for {
 	}
