@@ -99,7 +99,7 @@ func StartServer(servers []string, me int) *KVPaxos {
 					conn.Close()
 				} else if kv.isunreliable() && (rand.Int63()%1000) < 200 {
 					// process the request but force discard of reply.
-					c1 := conn.(*net.TCPConn)
+					c1 := conn.(*net.UnixConn)
 					f, _ := c1.File()
 					err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)
 					if err != nil {

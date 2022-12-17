@@ -18,7 +18,7 @@ There are three main roles in Paxos: `proposers` propose values, `acceptors` acc
 
 The Paxos algorithm is divided into two phases for all processes to reach an agreement: the `propose` phase and the `accept` phase. At a high level, in the propose phase, the proposer contacts all processes in the system and asks them if they will promise to consider its value. Once a proposer has received promises to its requests from a quorom/a majority of the acceptors, we enter the accept phase, where the proposer sends a proposed values to acceptors. If a quorum of processes accepts this value, then the value is chosen. In practice, there is a third phase, the commit phase, that lets all replicas know that a value has been chosen.
 
-![Paxos](paxos.png)
+![Paxos](./figures/paxos.png)
 
 At a detailed level, in the propose phase, the proposer selects a unique propsal number `n` that is greater than any `n` it has previously sent, and different from all other proposal numbers the system has previously used. The proposer then sends a `PREPARE` request that is associated with this proposal number n to a majority of the acceptors. Once the acceptor receives a `PREPARE` request, it checks whether the incoming proposal number is greater than any other proposal number it has previously received. If so, then the acceptor responds with a promise that indicates no other proposal with a smaller number can make it to consensus.
 
@@ -28,7 +28,7 @@ Following that, once the proposer receives promises from a majority of acceptors
 
 When we need to have processes in a distributed system reach consensus on a sequence of numbers, the naive approach is to run multiple rounds of Paxos, since one round of Paxos results in the decision of a single value. As shown in the figure below, one optimization when we run Paxos for consecutive rounds is to assume a stable leader across rounds, therefore eliminating the need to do the propose phase (phase-1) in subsequent rounds of Paxos after determining a leader. In subsequent rounds of Multi-Paxos, the proposal number `n` used in the original `PREPARE` message is inherited by the following accept phases (phase-2). Moreover, phase-3 is piggybacked to the next phase-2, further reducing the communication overheads. All `PROPOSE` messages are attached with an additional parameter that indicates the sequence number (i.e., the current round). In the worst case where the leader is unstable, Multi-Paxos gracefully degrades to the Basic Paxos algorithm.
 
-![Multi-Paxos](multi_paxos.jpg)
+![Multi-Paxos](./figures/multi_paxos.jpg)
 
 ## Implementation
 
@@ -144,17 +144,17 @@ We develop our test cases atop those provided in http://nil.csail.mit.edu/6.824/
 
 We evaluate our kv storage system based on Basic Paxos and Multi Paxos on 3 and 5 real CloudLab nodes. We only evaluate single datacenter setup. The RTT between clients to the datacenter is 20ms.  We were planning to set up a wide-area distributed group using CloudLab nodes in different physical clusters (e.g., Clemson, Utah, and Wisconsin). Unfortunately, we ran into a technical challenge: even though the inter-node RTT is in the order of tens of miliseconds, we observe drastically higher-than-expected latency and reduced throughput. Invesitigating the underlying reason is ongoing work -- we are suspecting that the high latency is due to unexpected network conditions between these datacenters.
 
-![wide_area](wide_area.jpg)
+![wide_area](./figures/wide_area.jpg)
 
 #### Basic Paxos vs. Multi Paxos
 
 In this subsection, we evaluate Basic Paxos and Multi Paxos in terms of throughput and latency. We start from one close-loop client and gradually increase to 13 clients. For each of these 13 experiments, we record the throughput and latency in the steady state and we plot the results for Basic Paxos and Multi Paxos under the 3-node setting. 
 
-![basic-vs-multi-3](basic-vs-multi-3.png)
+![basic-vs-multi-3](./figures/basic-vs-multi-3.png)
 
 We can observe that Basic Paxos yields higher latency, which is as expected since Multi Paxos can idealy skip the first phase. The less intuitive thing is that the maximum throughput of Multi Paxos is higher than that of Basic Paxos, since for Multi Paxos, only the leader can handle requests, while every node in Basic Paxos can handle requests. However, the pitfall of multiple leaders is that, naturally, the number of conflicts is higher compared to using a single leader, and thus the system handles more conflicts, which hurts the throughput performance.
 
-![basic-vs-multi-5](basic-vs-multi-5.png)
+![basic-vs-multi-5](./figures/basic-vs-multi-5.png)
 For the 5-node setting, we have a similar observation: Basic Paxos has higher latency and Multi Paxos has higher maximum throughput.
 
 For the both plots, we can also obeserve a clear speration of state.
@@ -166,11 +166,11 @@ For the both plots, we can also obeserve a clear speration of state.
 
 In this subsection, we try to invesigate how our system performs when the number of nodes scales up. We evaluate both Basic Paxos and Multi Paxos in 3 and 5 nodes respectively that are co-located in the same CloudLab datacenter. We observe that, as expected, the latency in the 5-node setting is higher than that in the 3-node setting under the same throughput.
 
-![basic-vs-multi-3](basic-3-5.png)
+![basic-vs-multi-3](./figures/basic-3-5.png)
 
 We can also obeserve that in both Basic Paxos and Multi Paxos, the 3-node setting has a higher maximum system throughput compared with the 5-node setting. It's as expected, since the communication cost of this system almost doubled.  
 
-![basic-vs-multi-5](multi-3-5.png)
+![basic-vs-multi-5](./figures/multi-3-5.png)
 
 We also measure the number of RPCs for Multi Paxos and Basic Paxos. We find that when our system is underloaded, Multi Paxos has strictly fewer RPCs compared with Basic Paxos. However, when our system is extremely overloaded, they could have comparable number of RPCs. For Basic Paxos, it's mainly due to conflicts. For Multi Paxos, it's because that the leader changes pretty fast.
 
